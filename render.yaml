@@ -5,6 +5,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     plan: free
+    region: ohio
     healthCheckPath: /health
     autoDeploy: true
     envVars:

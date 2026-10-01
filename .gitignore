@@ -11,3 +11,5 @@ temp/
 .trash/
 IMPORTANT.md
 *.egg-info/
+.env.*
+!.env.example

@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     daily_spend_cap_usd: Decimal = Decimal("5")
     runs_per_ip_per_hour: int = 10
     cors_origins: str = "http://localhost:3000"
+    cors_origin_regex: str = r"https://support-triage-agent(-[a-z0-9-]+)?\.vercel\.app"
     input_price_per_mtok: Decimal = Decimal("4")
     output_price_per_mtok: Decimal = Decimal("20")
 

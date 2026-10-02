@@ -128,6 +128,49 @@ async def test_create_raises_model_error_on_client_error() -> None:
         await model.create("System", [], [{"role": "user", "content": "Hi"}])
 
 
+async def test_daily_quota_switches_model_and_replaces_foreign_signature() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        if body["model"] == "first":
+            return httpx.Response(429, text='{"quotaId": "GenerateRequestsPerDayPerProject"}')
+        return httpx.Response(200, json=completion({"content": "Done."}))
+
+    settings = Settings(agent_provider="gemini", gemini_api_key="k", gemini_model="first, second")
+    model = GeminiModel(settings, transport=httpx.MockTransport(handler), retry_delays=(0.0,))
+    history = [
+        {"role": "user", "content": "Hi"},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "c1",
+                    "name": "search_kb",
+                    "input": {"query": "x"},
+                    "source_model": "first",
+                    "extra_content": {"google": {"thought_signature": "real"}},
+                }
+            ],
+        },
+        {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "{}"}],
+        },
+    ]
+    turn = await model.create("System", [], history)
+    assert turn.text == "Done."
+    assert [b["model"] for b in seen] == ["first", "second"]
+    call = seen[1]["messages"][2]["tool_calls"][0]
+    assert (
+        call["extra_content"]["google"]["thought_signature"] == "skip_thought_signature_validator"
+    )
+    await model.create("System", [], [{"role": "user", "content": "Again"}])
+    assert [b["model"] for b in seen] == ["first", "second", "second"]
+
+
 def test_build_model_picks_provider() -> None:
     assert isinstance(build_model(gemini_settings()), GeminiModel)
     assert build_model(gemini_settings()).name == "gemini-x"

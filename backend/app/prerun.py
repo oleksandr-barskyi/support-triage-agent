@@ -1,4 +1,5 @@
 import asyncio
+import sys
 
 from sqlalchemy import select
 
@@ -8,7 +9,7 @@ from app.core.settings import get_settings
 from app.db.models import AgentRun, RunStatus, Ticket
 
 
-async def main() -> None:
+async def main(limit: int | None) -> None:
     from app.db.session import SessionFactory, engine
 
     settings = get_settings()
@@ -20,6 +21,7 @@ async def main() -> None:
                 select(Ticket.id)
                 .where(~Ticket.runs.any(AgentRun.status != RunStatus.failed))
                 .order_by(Ticket.id)
+                .limit(limit)
             )
         ).all()
         run_ids = []
@@ -39,4 +41,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main(int(sys.argv[1]) if len(sys.argv) > 1 else None))

@@ -143,8 +143,28 @@ class Ticket(Base):
     runs: Mapped[list[AgentRun]] = relationship(
         back_populates="ticket", order_by="AgentRun.id", cascade="all, delete-orphan"
     )
+    attachments: Mapped[list[Attachment]] = relationship(
+        back_populates="ticket", order_by="Attachment.id", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (Index("ix_tickets_search", "search_vector", postgresql_using="gin"),)
+
+
+class Attachment(Base):
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    pages: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    fields: Mapped[Any] = mapped_column(JsonType, nullable=True)
+    extraction_model: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    ticket: Mapped[Ticket] = relationship(back_populates="attachments")
 
 
 class AgentRun(Base):

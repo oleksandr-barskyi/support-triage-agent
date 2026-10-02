@@ -4,14 +4,17 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+import anthropic
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent import schemas
+from app.agent.model import AgentModel, ModelAPIError
 from app.db.models import (
     ActionType,
     AgentRun,
+    Attachment,
     Customer,
     KbArticle,
     Order,
@@ -19,6 +22,7 @@ from app.db.models import (
     Subscription,
     Ticket,
 )
+from app.documents import DocumentError, extract_fields
 
 PROPOSAL_TOOLS = {"propose_triage", "propose_reply", "propose_refund", "escalate"}
 
@@ -28,6 +32,7 @@ class ToolContext:
     session: AsyncSession
     run: AgentRun
     refund_cap: Decimal
+    model: AgentModel | None = None
 
 
 class ToolError(Exception):
@@ -175,6 +180,32 @@ async def find_similar_tickets(ctx: ToolContext, data: schemas.SearchInput) -> d
     }
 
 
+async def read_attachments(ctx: ToolContext, data: schemas.AttachmentsInput) -> dict[str, Any]:
+    attachments = (
+        await ctx.session.scalars(
+            select(Attachment)
+            .where(Attachment.ticket_id == ctx.run.ticket_id)
+            .order_by(Attachment.id)
+        )
+    ).all()
+    out = []
+    for a in attachments:
+        item: dict[str, Any] = {"id": a.id, "filename": a.filename, "pages": a.pages}
+        if a.fields is None and ctx.model is not None:
+            try:
+                fields = await extract_fields(ctx.model, a.text)
+                a.fields = fields.model_dump(mode="json")
+                a.extraction_model = ctx.model.name
+                await ctx.session.flush()
+            except (DocumentError, ModelAPIError, anthropic.APIError) as exc:
+                item["extraction_error"] = str(exc)[:300]
+        item["fields"] = a.fields
+        if data.include_text:
+            item["text"] = a.text[:3000]
+        out.append(item)
+    return {"attachments": out}
+
+
 async def _propose(ctx: ToolContext, kind: ActionType, payload: dict[str, Any]) -> dict[str, Any]:
     action = ProposedAction(run_id=ctx.run.id, type=kind, payload=payload)
     ctx.session.add(action)
@@ -257,6 +288,15 @@ TOOLS: list[Tool] = [
         schemas.CustomerIdInput,
         _obj({"customer_id": {"type": "integer"}}),
         get_order_history,
+    ),
+    Tool(
+        "read_attachments",
+        "Documents attached to this ticket (PDF invoices, receipts, statements) with fields "
+        "extracted into a fixed schema: type, issuer, number, date, currency, total, line "
+        "items. Call it whenever the ticket lists attachments.",
+        schemas.AttachmentsInput,
+        _obj({"include_text": {"type": "boolean", "description": "Also return raw text"}}),
+        read_attachments,
     ),
     Tool(
         "find_similar_tickets",

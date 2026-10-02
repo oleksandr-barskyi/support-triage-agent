@@ -1,20 +1,31 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agent.runner import RunScheduler
 from app.api.deps import get_db, get_scheduler, guard_new_run
-from app.api.schemas import RunOut, RunSummary, TicketCreate, TicketListItem, TicketOut
-from app.db.models import AgentRun, RunStatus, Ticket, TicketStatus
+from app.api.schemas import (
+    AttachmentOut,
+    RunOut,
+    RunSummary,
+    TicketCreate,
+    TicketListItem,
+    TicketOut,
+)
+from app.db.models import AgentRun, Attachment, RunStatus, Ticket, TicketStatus
+from app.documents import MAX_BYTES, DocumentError, extract_pdf_text
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 ACTIVE = {RunStatus.queued, RunStatus.running}
+MAX_ATTACHMENTS = 3
 
 
 async def _load_ticket(session: AsyncSession, ticket_id: int) -> TicketOut:
-    ticket = await session.get(Ticket, ticket_id)
+    ticket = await session.get(
+        Ticket, ticket_id, options=[selectinload(Ticket.attachments)], populate_existing=True
+    )
     if ticket is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ticket not found")
     run = await session.scalar(
@@ -82,6 +93,41 @@ async def create_ticket(
     await session.flush()
     await _start_run(session, scheduler, ticket, ip)
     return await _load_ticket(session, ticket.id)
+
+
+@router.post(
+    "/{ticket_id}/attachments",
+    response_model=AttachmentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_attachment(
+    ticket_id: int, file: UploadFile, session: AsyncSession = Depends(get_db)
+) -> AttachmentOut:
+    if await session.get(Ticket, ticket_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ticket not found")
+    existing = await session.scalar(
+        select(func.count(Attachment.id)).where(Attachment.ticket_id == ticket_id)
+    )
+    if (existing or 0) >= MAX_ATTACHMENTS:
+        raise HTTPException(status.HTTP_409_CONFLICT, "A ticket holds at most 3 attachments")
+    if file.content_type != "application/pdf":
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "Only PDF files are accepted")
+    data = await file.read(MAX_BYTES + 1)
+    try:
+        text, pages = extract_pdf_text(data)
+    except DocumentError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    attachment = Attachment(
+        ticket_id=ticket_id,
+        filename=(file.filename or "document.pdf")[:255],
+        content_type="application/pdf",
+        size_bytes=len(data),
+        pages=pages,
+        text=text,
+    )
+    session.add(attachment)
+    await session.commit()
+    return AttachmentOut.model_validate(attachment)
 
 
 @router.post("/{ticket_id}/rerun", response_model=TicketOut)

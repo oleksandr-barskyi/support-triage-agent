@@ -171,6 +171,21 @@ async def test_daily_quota_switches_model_and_replaces_foreign_signature() -> No
     assert [b["model"] for b in seen] == ["first", "second", "second"]
 
 
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ('{"retryDelay": "29s"}', 29.0),
+        ('{"retryDelay": "300s"}', 60.0),
+        ('{"retryDelay": "0.5s"}', 2.0),
+        ("{}", 2.0),
+    ],
+)
+def test_retry_delay_follows_server_hint_within_bounds(body: str, expected: float) -> None:
+    from app.agent.model import _retry_delay
+
+    assert _retry_delay(httpx.Response(429, text=body), 2.0) == expected
+
+
 def test_build_model_picks_provider() -> None:
     assert isinstance(build_model(gemini_settings()), GeminiModel)
     assert build_model(gemini_settings()).name == "gemini-x"

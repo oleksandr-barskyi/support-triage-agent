@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ RETRY_STATUSES = {429, 500, 502, 503, 504}
 STOP_REASONS = {"tool_calls": "tool_use", "length": "max_tokens", "content_filter": "refusal"}
 FOREIGN_SIGNATURE = "skip_thought_signature_validator"
 UNAVAILABLE_COOLDOWN_S = 3600.0
+MAX_RETRY_WAIT_S = 60.0
+RETRY_DELAY_RE = re.compile(r'"retryDelay":\s*"(\d+(?:\.\d+)?)s"')
 
 
 class ModelAPIError(Exception):
@@ -188,6 +191,13 @@ class _ModelUnavailable(Exception):
     pass
 
 
+def _retry_delay(response: httpx.Response, fallback: float) -> float:
+    match = RETRY_DELAY_RE.search(response.text)
+    if match is None:
+        return fallback
+    return min(max(float(match.group(1)), fallback), MAX_RETRY_WAIT_S)
+
+
 @dataclass
 class GeminiModel:
     settings: Settings
@@ -248,7 +258,7 @@ class GeminiModel:
             ):
                 raise _ModelUnavailable(model)
             if response.status_code in RETRY_STATUSES and attempt < len(self.retry_delays):
-                await asyncio.sleep(self.retry_delays[attempt])
+                await asyncio.sleep(_retry_delay(response, self.retry_delays[attempt]))
                 continue
             if response.status_code >= 400:
                 detail = response.text[:300]

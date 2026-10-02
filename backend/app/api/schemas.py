@@ -69,8 +69,19 @@ class TicketListItem(TicketBase):
     latest_run: RunSummary | None = None
 
 
+class AttachmentOut(ORM):
+    id: int
+    filename: str
+    size_bytes: int
+    pages: int
+    fields: dict[str, Any] | None
+    extraction_model: str | None
+    created_at: datetime
+
+
 class TicketOut(TicketBase):
     body: str
+    attachments: list[AttachmentOut] = []
     latest_run: RunOut | None = None
 
 

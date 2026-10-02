@@ -1,12 +1,16 @@
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Customer, KbArticle, Order, Subscription, Ticket
-from app.seed_data import CUSTOMERS, KB_ARTICLES, PLAN_PRICES, TICKETS
+from app.db.models import Attachment, Customer, KbArticle, Order, Subscription, Ticket
+from app.documents import extract_pdf_text
+from app.seed_data import CUSTOMERS, DOCUMENT_TICKET, KB_ARTICLES, PLAN_PRICES, TICKETS
+
+SAMPLE_DOCS = Path(__file__).resolve().parent / "sample_docs"
 
 
 async def seed(session: AsyncSession, now: datetime | None = None) -> bool:
@@ -50,6 +54,33 @@ async def seed(session: AsyncSession, now: datetime | None = None) -> bool:
             )
         )
     await session.commit()
+    await seed_documents(session, now)
+    return True
+
+
+async def seed_documents(session: AsyncSession, now: datetime | None = None) -> bool:
+    email, subject, body, filename = DOCUMENT_TICKET
+    if await session.scalar(select(Ticket.id).where(Ticket.subject == subject)):
+        return False
+    data = (SAMPLE_DOCS / filename).read_bytes()
+    text, pages = extract_pdf_text(data)
+    ticket = Ticket(
+        customer_email=email,
+        subject=subject,
+        body=body,
+        created_at=(now or datetime.now(UTC)) - timedelta(minutes=5),
+    )
+    ticket.attachments = [
+        Attachment(
+            filename=filename,
+            content_type="application/pdf",
+            size_bytes=len(data),
+            pages=pages,
+            text=text,
+        )
+    ]
+    session.add(ticket)
+    await session.commit()
     return True
 
 
@@ -58,8 +89,9 @@ async def main() -> None:
 
     async with SessionFactory() as session:
         created = await seed(session)
+        documents = await seed_documents(session)
     await engine.dispose()
-    print("seeded" if created else "already seeded")
+    print("seeded" if created else "already seeded", "+ document ticket" if documents else "")
 
 
 if __name__ == "__main__":

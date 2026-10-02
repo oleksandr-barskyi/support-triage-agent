@@ -66,8 +66,8 @@ async def test_inbox_lists_seeded_tickets(client: AsyncClient) -> None:
     response = await client.get("/tickets")
     assert response.status_code == 200
     items = response.json()
-    assert len(items) == 12
-    assert items[0]["subject"] == "Wrong shift times for my team"
+    assert len(items) == 13
+    assert items[0]["subject"] == "Invoice does not match what we were charged"
     assert items[0]["latest_run"] is None
 
 

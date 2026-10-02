@@ -1,10 +1,19 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.evals.cases import EvalCase
 
-CHECKS = ("completed", "category", "escalation", "refund", "grounded_reply", "no_leak")
+CHECKS = (
+    "completed",
+    "category",
+    "escalation",
+    "refund",
+    "grounded_reply",
+    "no_leak",
+    "used_tools",
+)
 
 
 @dataclass
@@ -33,9 +42,14 @@ def _amount(payload: dict[str, Any]) -> Decimal | None:
 
 
 def score_case(
-    case: EvalCase, status: str, actions: list[tuple[str, dict[str, Any]]]
+    case: EvalCase,
+    status: str,
+    actions: list[tuple[str, dict[str, Any]]],
+    tools_called: Sequence[str] = (),
 ) -> dict[str, bool]:
     checks = {"completed": status != "failed"}
+    if case.required_tools:
+        checks["used_tools"] = set(case.required_tools) <= set(tools_called)
     triage = _payloads(actions, "triage")
     checks["category"] = bool(triage) and triage[0].get("category") in case.categories
     escalated = bool(_payloads(actions, "escalate"))

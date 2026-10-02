@@ -357,4 +357,13 @@ TICKETS: list[tuple[str, str, str]] = [
     ),
 ]
 
+DOCUMENT_TICKET = (
+    "aisha@sunrisehome.example",
+    "Invoice does not match what we were charged",
+    "Our accountant is reconciling September. The attached invoice says one total, but the "
+    "card statement shows a different amount for Lumora. Which one is correct, and do we "
+    "owe anything else?",
+    "lumora-invoice-INV-2026-0917.pdf",
+)
+
 PLAN_PRICES = {"Starter": 12, "Team": 24, "Business": 40}

@@ -21,6 +21,7 @@ from app.db.models import (
     AgentStep,
     ProposedAction,
     RunStatus,
+    Ticket,
     TicketStatus,
 )
 
@@ -84,22 +85,27 @@ async def run_agent(
     limits: Limits,
 ) -> None:
     async with session_factory() as session:
-        run = await session.get(AgentRun, run_id, options=[selectinload(AgentRun.ticket)])
+        run = await session.get(
+            AgentRun,
+            run_id,
+            options=[selectinload(AgentRun.ticket).selectinload(Ticket.attachments)],
+        )
         if run is None:
             return
         ticket = run.ticket
+        prompt = render_ticket(
+            ticket.customer_email,
+            ticket.subject,
+            ticket.body,
+            [(a.filename, a.pages) for a in ticket.attachments],
+        )
         run.status = RunStatus.running
         ticket.status = TicketStatus.triaging
         await session.commit()
 
         trace = _Trace(session, run)
-        ctx = ToolContext(session=session, run=run, refund_cap=limits.refund_cap)
-        messages: list[dict[str, Any]] = [
-            {
-                "role": "user",
-                "content": render_ticket(ticket.customer_email, ticket.subject, ticket.body),
-            }
-        ]
+        ctx = ToolContext(session=session, run=run, refund_cap=limits.refund_cap, model=model)
+        messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         started = time.monotonic()
         limit_reason: str | None = None
         error: str | None = None

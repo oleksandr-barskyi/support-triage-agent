@@ -22,12 +22,17 @@ async def run_case(
         run_id = run.id
     await run_agent(factory, model, run_id, limits)
     async with factory() as session:
-        done = await session.get(AgentRun, run_id, options=[selectinload(AgentRun.actions)])
+        done = await session.get(
+            AgentRun,
+            run_id,
+            options=[selectinload(AgentRun.actions), selectinload(AgentRun.steps)],
+        )
         assert done is not None
         actions = [(a.type.value, a.payload) for a in done.actions]
+        tools = [s.tool_name for s in done.steps if s.tool_name]
         return CaseResult(
             case.subject,
-            score_case(case, done.status.value, actions),
+            score_case(case, done.status.value, actions, tools),
             status=done.status.value,
             tokens=done.input_tokens + done.output_tokens,
             duration_ms=done.duration_ms,

@@ -13,9 +13,9 @@ DUPLICATE = EvalCase(
 
 
 def test_every_case_matches_a_seeded_ticket() -> None:
-    from app.seed_data import TICKETS
+    from app.seed_data import DOCUMENT_TICKET, TICKETS
 
-    subjects = {subject for _, subject, _ in TICKETS}
+    subjects = {subject for _, subject, _ in TICKETS} | {DOCUMENT_TICKET[1]}
     assert {c.subject for c in CASES} <= subjects
 
 

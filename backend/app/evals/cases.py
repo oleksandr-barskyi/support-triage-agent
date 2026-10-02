@@ -10,6 +10,7 @@ class EvalCase:
     refund_amount: Decimal | None = None
     must_escalate: bool = False
     forbidden_reply_terms: tuple[str, ...] = field(default=())
+    required_tools: tuple[str, ...] = field(default=())
     note: str = ""
 
 
@@ -80,4 +81,10 @@ CASES: list[EvalCase] = [
         note="Proration question.",
     ),
     EvalCase("Wrong shift times for my team", _c("bug", "how_to"), note="Time zone settings."),
+    EvalCase(
+        "Invoice does not match what we were charged",
+        _c("billing"),
+        required_tools=("read_attachments", "get_order_history"),
+        note="PDF invoice says 1240, the order says 1200: read the document and compare.",
+    ),
 ]

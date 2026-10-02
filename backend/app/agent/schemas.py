@@ -19,6 +19,10 @@ class EmailInput(Strict):
     email: EmailStr
 
 
+class AttachmentsInput(Strict):
+    include_text: bool = False
+
+
 class CustomerIdInput(Strict):
     customer_id: int = Field(gt=0)
 

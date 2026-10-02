@@ -1,0 +1,54 @@
+{
+  "summary": {
+    "cases": 1,
+    "fully_passed": 1,
+    "checks": {
+      "completed": {
+        "passed": 1,
+        "total": 1
+      },
+      "category": {
+        "passed": 1,
+        "total": 1
+      },
+      "escalation": {
+        "passed": 0,
+        "total": 0
+      },
+      "refund": {
+        "passed": 1,
+        "total": 1
+      },
+      "grounded_reply": {
+        "passed": 1,
+        "total": 1
+      },
+      "no_leak": {
+        "passed": 0,
+        "total": 0
+      },
+      "used_tools": {
+        "passed": 1,
+        "total": 1
+      }
+    },
+    "avg_tokens": 9379,
+    "avg_duration_ms": 13014
+  },
+  "results": [
+    {
+      "subject": "Invoice does not match what we were charged",
+      "status": "awaiting_review",
+      "model": "gemini-3-flash-preview",
+      "checks": {
+        "completed": true,
+        "used_tools": true,
+        "category": true,
+        "refund": true,
+        "grounded_reply": true
+      },
+      "tokens": 9379,
+      "duration_ms": 13014
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 from decimal import Decimal
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import field_validator
@@ -23,7 +24,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+asyncpg://postgres@localhost:54329/triage"
+    agent_provider: Literal["anthropic", "gemini"] = "anthropic"
     anthropic_api_key: str = ""
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_reasoning_effort: str = "low"
     agent_model: str = "claude-opus-5-5"
     agent_effort: str = "medium"
     agent_fallbacks: bool = True
@@ -41,6 +46,12 @@ class Settings(BaseSettings):
     @classmethod
     def _asyncpg_url(cls, value: str) -> str:
         return normalize_database_url(value)
+
+    @property
+    def model_api_key(self) -> str:
+        if self.agent_provider == "gemini":
+            return self.gemini_api_key
+        return self.anthropic_api_key
 
     @property
     def cors_origin_list(self) -> list[str]:

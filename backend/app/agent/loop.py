@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from app.agent.model import AgentModel
+from app.agent.model import AgentModel, ModelAPIError
 from app.agent.prompts import CORRECTION, SYSTEM_PROMPT, render_ticket
 from app.agent.tools import ToolContext, execute_tool, tool_definitions
 from app.core.settings import Settings
@@ -180,7 +180,7 @@ async def run_agent(
                     limit_reason = f"turn limit of {limits.max_turns} reached"
         except TimeoutError:
             limit_reason = f"time limit of {limits.timeout_seconds:.0f}s reached"
-        except anthropic.APIError as exc:
+        except (anthropic.APIError, ModelAPIError) as exc:
             log.exception("model call failed for run %s", run_id)
             error = f"model API error: {type(exc).__name__}"
         except Exception as exc:

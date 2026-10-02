@@ -3,20 +3,24 @@ import asyncio
 from sqlalchemy import select
 
 from app.agent.loop import Limits, run_agent
-from app.agent.model import AnthropicModel
+from app.agent.model import build_model
 from app.core.settings import get_settings
-from app.db.models import AgentRun, Ticket
+from app.db.models import AgentRun, RunStatus, Ticket
 
 
 async def main() -> None:
     from app.db.session import SessionFactory, engine
 
     settings = get_settings()
-    model = AnthropicModel(settings)
+    model = build_model(settings)
     limits = Limits.from_settings(settings)
     async with SessionFactory() as session:
         without_runs = (
-            await session.scalars(select(Ticket.id).where(~Ticket.runs.any()).order_by(Ticket.id))
+            await session.scalars(
+                select(Ticket.id)
+                .where(~Ticket.runs.any(AgentRun.status != RunStatus.failed))
+                .order_by(Ticket.id)
+            )
         ).all()
         run_ids = []
         for ticket_id in without_runs:

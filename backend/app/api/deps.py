@@ -38,7 +38,7 @@ async def guard_new_run(
     session: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ) -> str:
-    if not settings.anthropic_api_key and request.app.state.requires_api_key:
+    if not settings.model_api_key and request.app.state.requires_api_key:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Model API key is not configured.")
     ip = client_ip(request)
     now = datetime.now(UTC)

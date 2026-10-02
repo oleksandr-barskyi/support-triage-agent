@@ -11,6 +11,18 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: AGENT_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: AGENT_TIMEOUT_SECONDS
+        value: "180"
+      - key: INPUT_PRICE_PER_MTOK
+        value: "0"
+      - key: OUTPUT_PRICE_PER_MTOK
+        value: "0"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: CORS_ORIGINS

@@ -1,10 +1,22 @@
+import asyncio
+import json
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
 import anthropic
+import httpx
 from anthropic.types.beta import BetaMessageParam, BetaOutputConfigParam, BetaToolParam
 
 from app.core.settings import Settings
+
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+STOP_REASONS = {"tool_calls": "tool_use", "length": "max_tokens", "content_filter": "refusal"}
+
+
+class ModelAPIError(Exception):
+    pass
 
 
 @dataclass
@@ -67,3 +79,145 @@ class AnthropicModel:
             output_tokens=response.usage.output_tokens,
             model=response.model,
         )
+
+
+def _plain_schema(schema: Any) -> Any:
+    if isinstance(schema, dict):
+        return {k: _plain_schema(v) for k, v in schema.items() if k != "additionalProperties"}
+    if isinstance(schema, list):
+        return [_plain_schema(v) for v in schema]
+    return schema
+
+
+def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": _plain_schema(t["input_schema"]),
+            },
+        }
+        for t in tools
+    ]
+
+
+def _assistant_message(blocks: list[dict[str, Any]]) -> dict[str, Any]:
+    text = "\n".join(b["text"] for b in blocks if b.get("type") == "text" and b.get("text"))
+    message: dict[str, Any] = {"role": "assistant", "content": text or None}
+    calls = []
+    for b in blocks:
+        if b.get("type") != "tool_use":
+            continue
+        call: dict[str, Any] = {
+            "id": b["id"],
+            "type": "function",
+            "function": {"name": b["name"], "arguments": json.dumps(b.get("input") or {})},
+        }
+        if "extra_content" in b:
+            call["extra_content"] = b["extra_content"]
+        calls.append(call)
+    if calls:
+        message["tool_calls"] = calls
+    return message
+
+
+def to_openai_messages(system: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = [{"role": "system", "content": system}]
+    for m in messages:
+        content = m["content"]
+        if isinstance(content, str):
+            out.append({"role": m["role"], "content": content})
+        elif m["role"] == "assistant":
+            out.append(_assistant_message(content))
+        else:
+            for b in content:
+                if b.get("type") == "tool_result":
+                    out.append(
+                        {"role": "tool", "tool_call_id": b["tool_use_id"], "content": b["content"]}
+                    )
+                elif b.get("type") == "text":
+                    out.append({"role": "user", "content": b["text"]})
+    return out
+
+
+def from_openai_response(data: dict[str, Any]) -> ModelTurn:
+    choice = data["choices"][0]
+    message = choice.get("message") or {}
+    content: list[dict[str, Any]] = []
+    if message.get("content"):
+        content.append({"type": "text", "text": message["content"]})
+    for call in message.get("tool_calls") or []:
+        fn = call["function"]
+        try:
+            args = json.loads(fn.get("arguments") or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        block: dict[str, Any] = {
+            "type": "tool_use",
+            "id": call.get("id") or f"call_{uuid.uuid4().hex[:12]}",
+            "name": fn["name"],
+            "input": args,
+        }
+        if "extra_content" in call:
+            block["extra_content"] = call["extra_content"]
+        content.append(block)
+    finish = choice.get("finish_reason") or "stop"
+    stop_reason = STOP_REASONS.get(finish, "end_turn")
+    if stop_reason == "end_turn" and any(b["type"] == "tool_use" for b in content):
+        stop_reason = "tool_use"
+    usage = data.get("usage") or {}
+    return ModelTurn(
+        content=content,
+        stop_reason=stop_reason,
+        input_tokens=usage.get("prompt_tokens", 0),
+        output_tokens=usage.get("completion_tokens", 0),
+        model=data.get("model") or "",
+    )
+
+
+@dataclass
+class GeminiModel:
+    settings: Settings
+    transport: httpx.AsyncBaseTransport | None = None
+    retry_delays: tuple[float, ...] = (2.0, 5.0, 10.0)
+    name: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.name = self.settings.gemini_model
+
+    async def create(
+        self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]
+    ) -> ModelTurn:
+        payload = {
+            "model": self.name,
+            "messages": to_openai_messages(system, messages),
+            "tools": to_openai_tools(tools),
+            "reasoning_effort": self.settings.gemini_reasoning_effort,
+        }
+        headers = {"Authorization": f"Bearer {self.settings.gemini_api_key}"}
+        async with httpx.AsyncClient(
+            base_url=GEMINI_BASE_URL,
+            timeout=self.settings.agent_timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            for attempt in range(len(self.retry_delays) + 1):
+                try:
+                    response = await client.post("/chat/completions", json=payload, headers=headers)
+                except httpx.HTTPError as exc:
+                    raise ModelAPIError(f"Gemini request failed: {type(exc).__name__}") from exc
+                if response.status_code in RETRY_STATUSES and attempt < len(self.retry_delays):
+                    await asyncio.sleep(self.retry_delays[attempt])
+                    continue
+                if response.status_code >= 400:
+                    detail = response.text[:300]
+                    raise ModelAPIError(f"Gemini HTTP {response.status_code}: {detail}")
+                return from_openai_response(response.json())
+        raise ModelAPIError("Gemini retries exhausted")
+
+
+def build_model(settings: Settings) -> AgentModel:
+    if settings.agent_provider == "gemini":
+        return GeminiModel(settings)
+    return AnthropicModel(settings)

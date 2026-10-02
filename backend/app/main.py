@@ -8,7 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agent.loop import Limits
-from app.agent.model import AgentModel, AnthropicModel
+from app.agent.model import AgentModel, build_model
 from app.agent.runner import RunScheduler
 from app.api import actions, runs, tickets
 from app.core.settings import Settings, get_settings
@@ -53,7 +53,7 @@ def create_app(
     app.state.requires_api_key = model_factory is None
     app.state.scheduler = RunScheduler(
         factory,
-        model_factory or (lambda: AnthropicModel(settings)),
+        model_factory or (lambda: build_model(settings)),
         Limits.from_settings(settings),
     )
     app.add_middleware(

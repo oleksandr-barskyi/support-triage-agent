@@ -5,9 +5,12 @@ its own (customer, plan, charges, help center, similar tickets) and proposes a t
 reply grounded in help-center articles, a refund, or an escalation. **Nothing changes
 until a human approves it.**
 
-Python and FastAPI on the backend, Next.js and TypeScript on the frontend, PostgreSQL,
-Claude through the official `anthropic` SDK. The company, customers and tickets are
-fictional.
+Python and FastAPI on the backend, Next.js and TypeScript on the frontend, PostgreSQL.
+The model layer is provider-agnostic: Claude through the official `anthropic` SDK, or
+Gemini through its OpenAI-compatible API (the public demo runs on Gemini's free tier).
+The company, customers and tickets are fictional.
+
+Live demo: https://support-triage-agent-tau.vercel.app
 
 ## What it shows
 
@@ -27,6 +30,17 @@ fictional.
   streams the trace live over Server-Sent Events.
 - **Tested without a network.** The model sits behind a small `AgentModel` protocol;
   tests use a scripted fake that replays tool-call sequences.
+- **Document processing.** PDF attachments are uploaded through the API, their text is
+  extracted with `pypdf`, and the agent's `read_attachments` tool turns them into typed
+  fields (type, issuer, number, date, currency, total, line items) through a forced tool
+  call validated by Pydantic, with one corrective retry. A seeded invoice disagrees with
+  the order history by 40 USD; the agent has to notice.
+- **Evaluations.** `python -m app.evals` runs the live agent over labelled tickets and
+  scores each run: triage category, required escalation, refund decision and amount,
+  replies citing help-center articles, no leaked account data, required tools used.
+  Reports land in `backend/evals/reports/` as Markdown and JSON.
+- **Provider fallback.** On Gemini, a list of models is tried in order when a daily free
+  quota runs out, and per-minute limits are retried after the delay the API asks for.
 
 ## Architecture
 

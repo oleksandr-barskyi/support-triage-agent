@@ -10,6 +10,7 @@ __pycache__/
 temp/
 .trash/
 IMPORTANT.md
+SESSION.md
 *.egg-info/
 .env.*
 !.env.example

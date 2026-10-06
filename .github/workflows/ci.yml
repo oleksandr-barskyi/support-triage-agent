@@ -36,8 +36,8 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy app
-      - run: pytest -q
       - run: alembic upgrade head
+      - run: pytest -q
 
   frontend:
     runs-on: ubuntu-latest
